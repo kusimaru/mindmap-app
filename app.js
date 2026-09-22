@@ -305,7 +305,7 @@ function renderMap() {
   const m = cur(); const svg = $('#svg'); const wrap = $('#canvasWrap');
   wrap.classList.toggle('empty', !m);
   $('#title').disabled = $('#catSelect').disabled = !m;
-  ['#btnFit','#btnAlign','#btnDup','#btnOutline','#btnDelMap'].forEach(s => $(s).disabled = !m);
+  ['#btnFit','#btnAlign','#btnDup','#btnOutline','#btnDelMap','#btnYohaku'].forEach(s => $(s).disabled = !m);
   $('#btnUndo').disabled = !m || !state.history.length;
   $('#btnRedo').disabled = !m || !state.future.length;
   if (!m) { svg.innerHTML = ''; $('#title').value = ''; return; }
@@ -1036,6 +1036,102 @@ $('#nbMore').onclick = e => { const br = e.currentTarget.getBoundingClientRect()
 // ---------- 起動 ----------
 renderAll(); renderPenBar();
 requestAnimationFrame(() => { if (data.maps.length) openMap([...data.maps].sort((a, b) => b.updatedAt - a.updatedAt)[0].id); });
+
+// ---------- 余白ノートへ送る: 表示範囲を PNG にして届ける ----------
+const YOHAKU_KEY = 'mindmap-yohaku-github', YOHAKU_INBOX = '_yohaku-inbox/mindmap/';
+function yohakuConfig() { try { return JSON.parse(localStorage.getItem(YOHAKU_KEY) || 'null'); } catch (e) { return null; } }
+function yohakuSay(text, error) { const el = $('#yohaku-status'); el.textContent = text; el.hidden = !text; el.style.background = error ? '#fee2e2' : ''; el.style.borderColor = error ? '#fca5a5' : ''; el.style.color = error ? '#991b1b' : ''; }
+function updateYohakuBadge() { const c = yohakuConfig(), b = $('#yohaku-badge'); const ok = !!(c && c.token && c.owner && c.repo); b.textContent = ok ? 'GitHub' : (location.protocol === 'file:' ? '未設定' : '同じブラウザのみ'); b.className = 'sync-badge ' + (ok ? 'on' : 'set'); }
+async function captureCanvas(scale = 2) { // 今見えている範囲を画像にする
+  const r = svg.getBoundingClientRect(), W = Math.max(1, Math.round(r.width)), H = Math.max(1, Math.round(r.height));
+  const clone = svg.cloneNode(true);
+  clone.querySelectorAll('.plus, .minus, .tog, #overlay, .sbox, .halo, .zone').forEach(el => el.remove());
+  clone.querySelectorAll('.selected, .droptarget').forEach(el => el.classList.remove('selected', 'droptarget'));
+  clone.querySelectorAll('[opacity="0"]').forEach(el => el.removeAttribute('opacity'));
+  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg'); clone.setAttribute('width', W); clone.setAttribute('height', H); clone.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  clone.removeAttribute('id'); clone.removeAttribute('class');
+  const css = [...document.styleSheets].flatMap(ss => { try { return [...ss.cssRules].map(x => x.cssText); } catch (e) { return []; } }).join('\n');
+  const NS = 'http://www.w3.org/2000/svg';
+  const style = document.createElementNS(NS, 'style');
+  style.textContent = css + '\nsvg{font-family:system-ui,-apple-system,"Segoe UI","Yu Gothic UI","Hiragino Sans",sans-serif}';
+  const defs = document.createElementNS(NS, 'defs');
+  defs.innerHTML = '<pattern id="capgrid" width="24" height="24" patternUnits="userSpaceOnUse"><path d="M24 0H0V24" fill="none" stroke="#e6e7ea" stroke-width="1"/></pattern>';
+  const bg = document.createElementNS(NS, 'rect'); bg.setAttribute('width', W); bg.setAttribute('height', H); bg.setAttribute('fill', '#f7f7f8');
+  const grid = document.createElementNS(NS, 'rect'); grid.setAttribute('width', W); grid.setAttribute('height', H); grid.setAttribute('fill', 'url(#capgrid)');
+  clone.insertBefore(grid, clone.firstChild); clone.insertBefore(bg, clone.firstChild); clone.insertBefore(defs, clone.firstChild); clone.insertBefore(style, clone.firstChild);
+  const xml = new XMLSerializer().serializeToString(clone);
+  const url = URL.createObjectURL(new Blob([xml], { type: 'image/svg+xml;charset=utf-8' }));
+  try {
+    const img = new Image(); img.decoding = 'sync';
+    await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error('画像に変換できませんでした')); img.src = url; });
+    const canvas = document.createElement('canvas'); canvas.width = W * scale; canvas.height = H * scale;
+    const c2 = canvas.getContext('2d'); c2.scale(scale, scale); c2.drawImage(img, 0, 0, W, H);
+    return canvas;
+  } finally { URL.revokeObjectURL(url); }
+}
+function canvasToBlob(canvas) { return new Promise((res, rej) => canvas.toBlob(b => b ? res(b) : rej(new Error('PNG を作れませんでした')), 'image/png')); }
+function captureName() { const m = cur(), d = new Date(), pad = n => String(n).padStart(2, '0'); return `${(m ? m.title : 'マインドマップ').replace(/[\\/:*?"<>|]/g, '_').slice(0, 40)} ${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}${pad(d.getMinutes())}`; }
+async function ghApi(cfg, path, init = {}) {
+  const r = await fetch('https://api.github.com' + path, { ...init, cache: 'no-store', headers: { Authorization: 'Bearer ' + cfg.token, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', ...(init.body ? { 'Content-Type': 'application/json' } : {}) } });
+  if (!r.ok) { const t = await r.text().catch(() => ''); throw new Error('GitHub ' + r.status + (r.status === 401 ? '（トークンが違うか期限切れ）' : r.status === 404 ? '（リポジトリ名かオーナー名が違うか、権限なし）' : '') + ' ' + t.slice(0, 80)); }
+  return r.status === 204 ? null : r.json();
+}
+async function sendToYohakuGitHub(cfg, blob, name) {
+  const buf = new Uint8Array(await blob.arrayBuffer()); let bin = ''; for (let i = 0; i < buf.length; i += 8192) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 8192));
+  const path = YOHAKU_INBOX + Date.now() + '-' + name + '.png';
+  await ghApi(cfg, '/repos/' + encodeURIComponent(cfg.owner) + '/' + encodeURIComponent(cfg.repo) + '/contents/' + path.split('/').map(encodeURIComponent).join('/'),
+    { method: 'PUT', body: JSON.stringify({ message: 'mindmap capture ' + name, content: btoa(bin), branch: cfg.branch || 'main' }) });
+}
+function sendToYohakuInbox(dataUrl, name) { // 同じ kusimaru.github.io 上の余白ノートが読む共有 IndexedDB
+  return new Promise((resolve, reject) => {
+    const r = indexedDB.open('oekaki-share', 1);
+    r.onupgradeneeded = () => { if (!r.result.objectStoreNames.contains('inbox')) r.result.createObjectStore('inbox', { keyPath: 'id' }); };
+    r.onerror = () => reject(r.error);
+    r.onsuccess = () => { const db = r.result, tx = db.transaction('inbox', 'readwrite'); tx.objectStore('inbox').put({ id: uid(), name, src: dataUrl, section: 'mindmap', time: Date.now() }); tx.oncomplete = () => { db.close(); resolve(); }; tx.onerror = () => reject(tx.error); };
+  });
+}
+async function sendToYohaku() {
+  const m = cur(); if (!m) return;
+  const btn = $('#btnYohaku'); btn.disabled = true; $('#yohaku-tools').open = true;
+  try {
+    yohakuSay('キャプチャを作成中…');
+    const canvas = await captureCanvas(2), name = captureName(), cfg = yohakuConfig();
+    if (cfg && cfg.token && cfg.owner && cfg.repo) {
+      yohakuSay('GitHub へ送信中…');
+      await sendToYohakuGitHub(cfg, await canvasToBlob(canvas), name);
+      yohakuSay('送りました。余白ノートを開くと「データ受け取り › マインドマップ」に入ります（' + new Date().toLocaleTimeString() + '）');
+    } else if (location.protocol !== 'file:') {
+      await sendToYohakuInbox(canvas.toDataURL('image/png'), name);
+      yohakuSay('このブラウザの共有領域に置きました。同じブラウザで余白ノートを開くと受け取ります。iPad のホーム画面アプリ同士では届かないので、その場合は GitHub の設定を入れてください。');
+    } else {
+      yohakuSay('ファイル直開きでは送れません。公開版 (kusimaru.github.io) で使うか、「クリップボードにコピー」を使ってください。', true);
+    }
+  } catch (e) { yohakuSay('送れませんでした: ' + e.message, true); }
+  finally { btn.disabled = false; }
+}
+async function copyCaptureToClipboard() {
+  const m = cur(); if (!m) return;
+  try {
+    yohakuSay('キャプチャを作成中…');
+    const name = captureName();
+    if (!navigator.clipboard || !window.ClipboardItem) throw new Error('このブラウザはクリップボードへの画像コピーに対応していません');
+    const blobPromise = captureCanvas(2).then(canvasToBlob); // Safari は ClipboardItem に Promise を渡す必要がある
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blobPromise, 'text/plain': new Blob(['mindmap:' + name], { type: 'text/plain' }) })]);
+    yohakuSay('コピーしました。余白ノートのページで Ctrl+V (⌘V) すると「データ受け取り › マインドマップ」に入ります。');
+  } catch (e) { yohakuSay('コピーできませんでした: ' + e.message, true); }
+}
+{
+  const cfg = yohakuConfig() || {};
+  $('#yohaku-token').value = cfg.token || ''; $('#yohaku-owner').value = cfg.owner || 'kusimaru'; $('#yohaku-repo').value = cfg.repo || 'oekaki-data'; $('#yohaku-branch').value = cfg.branch || 'main';
+  $('#yohaku-save').onclick = () => {
+    const c = { token: $('#yohaku-token').value.trim(), owner: $('#yohaku-owner').value.trim(), repo: $('#yohaku-repo').value.trim(), branch: $('#yohaku-branch').value.trim() || 'main' };
+    try { localStorage.setItem(YOHAKU_KEY, JSON.stringify(c)); } catch (e) {}
+    updateYohakuBadge(); yohakuSay(c.token ? '保存しました。' : '設定を消しました。');
+  };
+  $('#yohaku-copy').onclick = copyCaptureToClipboard;
+  $('#btnYohaku').onclick = sendToYohaku;
+  updateYohakuBadge();
+}
 
 // ---------- クラウド同期 (cloud.mjs) 向けの窓口 ----------
 window.MM = {

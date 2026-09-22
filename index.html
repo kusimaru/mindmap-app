@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com; frame-src https://yohaku-note-3c146.firebaseapp.com; object-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://api.github.com; frame-src https://yohaku-note-3c146.firebaseapp.com; object-src 'none'">
 <meta name="theme-color" content="#7c3aed">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="マインドマップ">
@@ -147,9 +147,10 @@ svg.overstroke{cursor:move}
 .sync-who:not(:empty)+.sync-badge{margin-left:4px}
 .sync-badge.on{background:#16a34a}.sync-badge.warn{background:#d97706}.sync-badge.err{background:#dc2626}
 .sync-tools .small{font-size:11px;color:var(--muted);line-height:1.6;margin:4px 0 8px}
-#sync-form input{width:100%;border:1px solid var(--border);border-radius:6px;padding:7px 9px;font-size:13px;margin-bottom:6px;background:#fff;font-family:inherit}
-#sync-form div{display:flex;gap:6px}
-#sync-form button{flex:1;padding:6px 8px}
+#sync-form input,#yohaku-tools input{width:100%;border:1px solid var(--border);border-radius:6px;padding:7px 9px;font-size:13px;margin-bottom:6px;background:#fff;font-family:inherit}
+#sync-form div,#yohaku-tools div{display:flex;gap:6px}
+#sync-form button,#yohaku-tools div button{flex:1;padding:6px 8px}
+.sync-badge.set{background:#6b7280}
 button.small.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
 button.small.primary:hover{background:#2563eb}
 .link-button{border:0;background:none;color:var(--accent);cursor:pointer;font-size:11px;padding:2px 0;font-family:inherit}
@@ -168,6 +169,16 @@ button.small.primary:hover{background:#2563eb}
     <div class="section"><span>マップ</span><button class="small" id="btnAddMap">＋ マップ</button></div>
     <input id="search" placeholder="マップを検索">
     <div class="list" id="mapList"></div>
+    <details id="yohaku-tools" class="sync-tools">
+      <summary title="押すと開閉します">📤 余白ノートへ送る <span id="yohaku-badge" class="sync-badge">未設定</span></summary>
+      <p class="small">「余白ノートへ送る」ボタンで、今見えている範囲のキャプチャ (PNG) を余白ノートの「データ受け取り › マインドマップ」に届けます。iPad でも届けるには、余白ノートと同じ GitHub の設定を入れてください。</p>
+      <input type="password" id="yohaku-token" placeholder="GitHub トークン（github_pat_…）" autocomplete="off">
+      <input type="text" id="yohaku-owner" placeholder="オーナー（例: kusimaru）">
+      <input type="text" id="yohaku-repo" placeholder="リポジトリ（例: oekaki-data）">
+      <input type="text" id="yohaku-branch" placeholder="ブランチ（main）">
+      <div><button type="button" class="small primary" id="yohaku-save">設定を保存</button><button type="button" class="small" id="yohaku-copy" title="PNG をクリップボードにコピー。余白ノートのページで Ctrl+V すると「データ受け取り › マインドマップ」に入る">クリップボードにコピー</button></div>
+      <p id="yohaku-status" class="small sync-message" hidden></p>
+    </details>
     <details id="sync-tools" class="sync-tools">
       <summary title="押すと開閉します">☁ クラウド同期 <span id="sync-who" class="sync-who"></span><span id="sync-badge" class="sync-badge">オフ</span></summary>
       <div id="sync-signed-out">
@@ -196,6 +207,7 @@ button.small.primary:hover{background:#2563eb}
       <button class="small" id="btnAlign" title="手で動かした位置を元に戻す">整列</button>
       <button class="small" id="btnDup">マップを複製</button>
       <button class="small" id="btnOutline">アウトライン出力</button>
+      <button class="small" id="btnYohaku" title="今見えている範囲を画像にして余白ノートの「データ受け取り › マインドマップ」へ送る">余白ノートへ送る</button>
       <button class="small" id="btnDelMap">マップを削除</button>
     </div>
     <div id="canvasWrap" class="empty">
