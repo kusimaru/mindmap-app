@@ -654,8 +654,27 @@ $('#strokebar').addEventListener('click', e => {
   else if (b.dataset.sw) applyStrokeStyle(st => st.width = +b.dataset.sw);
   else if (b.hasAttribute('data-sdel')) deleteSelection();
 });
-function beginStroke(w) {
-  state.stroke = { id: uid(), color: state.pen.color, width: state.pen.width, points: [[+w.x.toFixed(1), +w.y.toFixed(1)]] };
+// 描画中の pointermove: 細かい座標 (coalesced) を取り込みつつ、別の座標系で届いた点やありえない跳びを弾く (iPad Safari 対策)
+function strokeMove(e) {
+  const st = state.stroke; if (!st) return;
+  let evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
+  // coalesced の最後は本体と同じ位置のはず。ずれていれば座標系が違うので使わない
+  if (evs.length && (Math.abs(evs[evs.length - 1].clientX - e.clientX) > 4 || Math.abs(evs[evs.length - 1].clientY - e.clientY) > 4)) { diag.badCoalesced++; evs = []; }
+  if (!evs.length) evs = [e];
+  for (const ev of evs) {
+    const last = st.last;
+    const jump = last ? Math.hypot(ev.clientX - last.x, ev.clientY - last.y) : 0;
+    if (last && jump > 200) { // 数ミリ秒で 200px 超はありえない
+      diag.jumps++;
+      if (st.points.length === 1) { const w = toWorld(ev.clientX, ev.clientY); st.points[0] = [+w.x.toFixed(1), +w.y.toFixed(1)]; st.last = { x: ev.clientX, y: ev.clientY }; diag.firstFixed++; } // 最初の点が壊れていたので置き換える
+      continue; // 途中の跳びは捨てる
+    }
+    extendStroke(toWorld(ev.clientX, ev.clientY)); st.last = { x: ev.clientX, y: ev.clientY };
+  }
+  if (!st.moveLogged) { st.moveLogged = true; diag.coords = `down=(${Math.round(st.downX)},${Math.round(st.downY)}) move=(${Math.round(e.clientX)},${Math.round(e.clientY)}) coalesced=${e.getCoalescedEvents ? e.getCoalescedEvents().length : 'none'}${e.getCoalescedEvents && e.getCoalescedEvents().length ? ' c0=(' + Math.round(e.getCoalescedEvents()[0].clientX) + ',' + Math.round(e.getCoalescedEvents()[0].clientY) + ')' : ''} page=(${Math.round(e.pageX)},${Math.round(e.pageY)})`; diagNote(e); }
+}
+function beginStroke(w, e) {
+  state.stroke = { id: uid(), color: state.pen.color, width: state.pen.width, points: [[+w.x.toFixed(1), +w.y.toFixed(1)]], last: e ? { x: e.clientX, y: e.clientY } : null, downX: e ? e.clientX : 0, downY: e ? e.clientY : 0 };
   $('#overlay').innerHTML = `<path class="ink" id="liveInk" stroke="${state.stroke.color}" stroke-width="${state.stroke.width}" d=""/>`;
 }
 function extendStroke(w) {
@@ -722,12 +741,12 @@ function touchUp(e) {
 }
 let penDown = false, penSeen = false; // Apple Pencil で描いている間は指 (手のひら) を無視する
 // 診断: 最近のポインター入力を操作ヘルプに表示する (iPad での不具合調査用)
-const diag = { log: [], cancels: 0 };
+const diag = { log: [], cancels: 0, jumps: 0, firstFixed: 0, badCoalesced: 0, coords: '' };
 function diagNote(e) {
   if (e.pointerType === 'pen') penSeen = true;
   if (e.type === 'pointercancel') diag.cancels++;
   if (e.type !== 'pointermove') { diag.log.push(`${e.type} ${e.pointerType} primary=${e.isPrimary} buttons=${e.buttons} id=${e.pointerId}`); if (diag.log.length > 6) diag.log.shift(); }
-  const el = $('#diag'); if (el) el.textContent = `cancel:${diag.cancels} tool:${state.tool} stroke:${state.stroke ? 'on' : 'off'} | ` + diag.log.join(' / ');
+  const el = $('#diag'); if (el) el.textContent = `cancel:${diag.cancels} jumps:${diag.jumps} firstFixed:${diag.firstFixed} badCoalesced:${diag.badCoalesced} tool:${state.tool} | ${diag.coords} | ` + diag.log.join(' / ');
 }
 // Safari が独自のスクロール/ジェスチャーを始めて pointercancel を出すのを防ぐ
 svg.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
@@ -751,7 +770,7 @@ svg.addEventListener('pointerdown', e => {
     e.preventDefault(); state.spaceUsed = true; pan = { x: e.clientX, y: e.clientY, tx: state.tx, ty: state.ty }; svg.classList.add('panning'); return;
   }
   if (e.button !== 0) return;
-  if (state.tool === 'pen') { e.preventDefault(); capture(e); finishEdit(true); beginStroke(toWorld(e.clientX, e.clientY)); state.stroke.pointerId = e.pointerId; return; }
+  if (state.tool === 'pen') { e.preventDefault(); capture(e); finishEdit(true); beginStroke(toWorld(e.clientX, e.clientY), e); state.stroke.pointerId = e.pointerId; return; }
   if (state.tool === 'eraser') { e.preventDefault(); capture(e); state.erase = { before: snapshotState(), removed: false }; eraseAt(toWorld(e.clientX, e.clientY)); return; }
   if (g) {
     const id = g.dataset.id;
@@ -789,7 +808,7 @@ window.addEventListener('pointermove', e => {
     state.tx = pan.tx + e.clientX - pan.x; state.ty = pan.ty + e.clientY - pan.y;
     applyView(); return;
   }
-  if (state.stroke) { let evs = e.getCoalescedEvents ? e.getCoalescedEvents() : []; if (!evs.length) evs = [e]; evs.forEach(ev => extendStroke(toWorld(ev.clientX, ev.clientY))); return; } // ペンの細かい座標も取り込む (無ければ本体の座標)
+  if (state.stroke) { strokeMove(e); return; }
   if (state.erase) { eraseAt(toWorld(e.clientX, e.clientY)); return; }
   if (!state.drag && !marquee && state.tool === 'select' && e.target === svg) svg.classList.toggle('overstroke', !!strokeAt(toWorld(e.clientX, e.clientY)));
   if (marquee) {
