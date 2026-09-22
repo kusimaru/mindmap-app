@@ -720,9 +720,15 @@ function touchUp(e) {
   if (pinch && touches.size < 2) { pinch = null; return true; }
   return false;
 }
+let penDown = false; // Apple Pencil で描いている間は指 (手のひら) を無視する
 svg.addEventListener('pointerdown', e => {
   hideCtx();
-  if (e.pointerType === 'touch' && touchDown(e)) return;
+  if (e.pointerType === 'pen') penDown = true;
+  if (e.pointerType === 'touch') {
+    if (penDown || state.stroke || state.erase) return;           // パームリジェクション
+    if (touchDown(e)) return;                                       // 2 本指: ピンチ
+    if (state.tool !== 'select') { pan = { x: e.clientX, y: e.clientY, tx: state.tx, ty: state.ty }; return; } // ペン/消しゴム中の指は画面移動
+  }
   if (!e.isPrimary) return;
   if (e.pointerType === 'pen' && (e.button === 5 || (e.buttons & 32))) { // ペンの消しゴム側
     e.preventDefault(); capture(e); finishStroke(true);
@@ -734,7 +740,7 @@ svg.addEventListener('pointerdown', e => {
     e.preventDefault(); state.spaceUsed = true; pan = { x: e.clientX, y: e.clientY, tx: state.tx, ty: state.ty }; svg.classList.add('panning'); return;
   }
   if (e.button !== 0) return;
-  if (state.tool === 'pen') { e.preventDefault(); capture(e); finishEdit(true); beginStroke(toWorld(e.clientX, e.clientY)); return; }
+  if (state.tool === 'pen') { e.preventDefault(); capture(e); finishEdit(true); beginStroke(toWorld(e.clientX, e.clientY)); state.stroke.pointerId = e.pointerId; return; }
   if (state.tool === 'eraser') { e.preventDefault(); capture(e); state.erase = { before: snapshotState(), removed: false }; eraseAt(toWorld(e.clientX, e.clientY)); return; }
   if (g) {
     const id = g.dataset.id;
@@ -764,14 +770,15 @@ svg.addEventListener('pointerdown', e => {
 });
 function capture(e) { try { svg.setPointerCapture(e.pointerId); } catch (err) {} } // 描画中はペンが svg の外に出ても追いかける
 window.addEventListener('pointermove', e => {
-  if (e.pointerType === 'touch' && touchMove(e)) return;
+  if (e.pointerType === 'touch') { if (penDown || state.stroke || state.erase) return; if (touchMove(e)) return; }
   if (pinch) return;
+  if (state.stroke && e.pointerId !== state.stroke.pointerId) return; // 描いている指/ペン以外は無視
   if (!e.isPrimary) return;
   if (pan) {
     state.tx = pan.tx + e.clientX - pan.x; state.ty = pan.ty + e.clientY - pan.y;
     applyView(); return;
   }
-  if (state.stroke) { (e.getCoalescedEvents ? e.getCoalescedEvents() : [e]).forEach(ev => extendStroke(toWorld(ev.clientX, ev.clientY))); return; } // ペンの細かい座標も取り込む
+  if (state.stroke) { let evs = e.getCoalescedEvents ? e.getCoalescedEvents() : []; if (!evs.length) evs = [e]; evs.forEach(ev => extendStroke(toWorld(ev.clientX, ev.clientY))); return; } // ペンの細かい座標も取り込む (無ければ本体の座標)
   if (state.erase) { eraseAt(toWorld(e.clientX, e.clientY)); return; }
   if (!state.drag && !marquee && state.tool === 'select' && e.target === svg) svg.classList.toggle('overstroke', !!strokeAt(toWorld(e.clientX, e.clientY)));
   if (marquee) {
@@ -797,7 +804,9 @@ window.addEventListener('pointermove', e => {
 window.addEventListener('pointerup', onPointerUp);
 window.addEventListener('pointercancel', onPointerUp);
 function onPointerUp(e) {
-  if (e.pointerType === 'touch' && touchUp(e)) return;
+  if (e.pointerType === 'pen') penDown = false;
+  if (e.pointerType === 'touch') { if (state.stroke || state.erase) { touches.delete(e.pointerId); return; } if (touchUp(e)) return; }
+  if (state.stroke && e.pointerId !== state.stroke.pointerId) return;
   if (!e.isPrimary) return;
   if (pan) { pan = null; svg.classList.remove('panning'); return; }
   if (state.stroke) { extendStroke(toWorld(e.clientX, e.clientY)); finishStroke(true); return; }

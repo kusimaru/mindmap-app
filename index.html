@@ -44,7 +44,8 @@ button.small:disabled{opacity:.4;cursor:default}
 .spacer{flex:1}
 #canvasWrap{flex:1;position:relative;overflow:hidden;background:#f7f7f8;background-image:linear-gradient(#e6e7ea 1px,transparent 1px),linear-gradient(90deg,#e6e7ea 1px,transparent 1px);background-size:24px 24px}
 #canvasWrap.empty::after{content:"左のリストからマップを選ぶか、「＋ マップ」で作成してください";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted)}
-svg{width:100%;height:100%;display:block;cursor:default;touch-action:none}
+svg{width:100%;height:100%;display:block;cursor:default;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+#canvasWrap{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 svg.panning{cursor:grabbing}
 .node{cursor:default}
 .node rect.hit{fill:transparent;stroke:none}
