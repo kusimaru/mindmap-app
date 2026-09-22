@@ -15,7 +15,7 @@
 <style>
 :root{--bg:#f4f5f7;--panel:#fff;--border:#dcdfe4;--text:#1f2328;--muted:#6b7280;--accent:#3b82f6}
 *{box-sizing:border-box}
-html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI","Yu Gothic UI",sans-serif;color:var(--text);background:var(--bg);font-size:14px}
+html,body{height:100%;margin:0;overscroll-behavior:none;font-family:system-ui,-apple-system,"Segoe UI","Yu Gothic UI",sans-serif;color:var(--text);background:var(--bg);font-size:14px}
 #app{display:flex;height:100%}
 #sidebar{width:270px;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;min-width:0}
 #sidebar header{padding:10px 12px;font-weight:600;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
@@ -45,7 +45,7 @@ button.small:disabled{opacity:.4;cursor:default}
 #canvasWrap{flex:1;position:relative;overflow:hidden;background:#f7f7f8;background-image:linear-gradient(#e6e7ea 1px,transparent 1px),linear-gradient(90deg,#e6e7ea 1px,transparent 1px);background-size:24px 24px}
 #canvasWrap.empty::after{content:"左のリストからマップを選ぶか、「＋ マップ」で作成してください";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted)}
 svg{width:100%;height:100%;display:block;cursor:default;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
-#canvasWrap{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+#canvasWrap{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:none}
 svg.panning{cursor:grabbing}
 .node{cursor:default}
 .node rect.hit{fill:transparent;stroke:none}
@@ -240,7 +240,8 @@ button.small.primary:hover{background:#2563eb}
         ノードをドラッグ 移動 (他のノードに重ねると親の変更 / 並べ替え)<br>
         背景ドラッグ 範囲選択　<kbd>Ctrl</kbd>+クリック 追加選択　<kbd>Ctrl+A</kbd> 全選択<br>
         ホイール 拡大縮小　<kbd>Shift</kbd>+ホイール 横移動　<kbd>Space</kbd>+ドラッグ / 中ボタン 画面移動<br>
-        左のパレット: ペンで手書き、消しゴムでなぞって消す、<kbd>Esc</kbd> で選択に戻る
+        左のパレット: ペンで手書き、消しゴムでなぞって消す、<kbd>Esc</kbd> で選択に戻る<br>
+        <span style="color:#9ca3af">診断:</span> <span id="diag" style="word-break:break-all"></span>
       </div>
     </div>
   </div>

@@ -720,16 +720,27 @@ function touchUp(e) {
   if (pinch && touches.size < 2) { pinch = null; return true; }
   return false;
 }
-let penDown = false; // Apple Pencil で描いている間は指 (手のひら) を無視する
+let penDown = false, penSeen = false; // Apple Pencil で描いている間は指 (手のひら) を無視する
+// 診断: 最近のポインター入力を操作ヘルプに表示する (iPad での不具合調査用)
+const diag = { log: [], cancels: 0 };
+function diagNote(e) {
+  if (e.pointerType === 'pen') penSeen = true;
+  if (e.type === 'pointercancel') diag.cancels++;
+  if (e.type !== 'pointermove') { diag.log.push(`${e.type} ${e.pointerType} primary=${e.isPrimary} buttons=${e.buttons} id=${e.pointerId}`); if (diag.log.length > 6) diag.log.shift(); }
+  const el = $('#diag'); if (el) el.textContent = `cancel:${diag.cancels} tool:${state.tool} stroke:${state.stroke ? 'on' : 'off'} | ` + diag.log.join(' / ');
+}
+// Safari が独自のスクロール/ジェスチャーを始めて pointercancel を出すのを防ぐ
+svg.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
 svg.addEventListener('pointerdown', e => {
-  hideCtx();
+  hideCtx(); diagNote(e);
   if (e.pointerType === 'pen') penDown = true;
   if (e.pointerType === 'touch') {
     if (penDown || state.stroke || state.erase) return;           // パームリジェクション
     if (touchDown(e)) return;                                       // 2 本指: ピンチ
-    if (state.tool !== 'select') { pan = { x: e.clientX, y: e.clientY, tx: state.tx, ty: state.ty }; return; } // ペン/消しゴム中の指は画面移動
+    // ペン/消しゴム中の指は画面移動 (ただしペン入力を一度も見ていない端末では指で描けるようにする)
+    if (state.tool !== 'select' && penSeen) { pan = { x: e.clientX, y: e.clientY, tx: state.tx, ty: state.ty }; return; }
   }
-  if (!e.isPrimary) return;
+  if (!e.isPrimary && e.pointerType !== 'pen') return;
   if (e.pointerType === 'pen' && (e.button === 5 || (e.buttons & 32))) { // ペンの消しゴム側
     e.preventDefault(); capture(e); finishStroke(true);
     state.erase = { before: snapshotState(), removed: false }; eraseAt(toWorld(e.clientX, e.clientY)); return;
@@ -773,7 +784,7 @@ window.addEventListener('pointermove', e => {
   if (e.pointerType === 'touch') { if (penDown || state.stroke || state.erase) return; if (touchMove(e)) return; }
   if (pinch) return;
   if (state.stroke && e.pointerId !== state.stroke.pointerId) return; // 描いている指/ペン以外は無視
-  if (!e.isPrimary) return;
+  if (!e.isPrimary && e.pointerType !== 'pen' && !state.stroke) return;
   if (pan) {
     state.tx = pan.tx + e.clientX - pan.x; state.ty = pan.ty + e.clientY - pan.y;
     applyView(); return;
@@ -804,10 +815,11 @@ window.addEventListener('pointermove', e => {
 window.addEventListener('pointerup', onPointerUp);
 window.addEventListener('pointercancel', onPointerUp);
 function onPointerUp(e) {
+  diagNote(e);
   if (e.pointerType === 'pen') penDown = false;
-  if (e.pointerType === 'touch') { if (state.stroke || state.erase) { touches.delete(e.pointerId); return; } if (touchUp(e)) return; }
+  if (e.pointerType === 'touch') { if (state.stroke || state.erase) { touches.delete(e.pointerId); if (e.pointerId !== (state.stroke && state.stroke.pointerId)) return; } else if (touchUp(e)) return; }
   if (state.stroke && e.pointerId !== state.stroke.pointerId) return;
-  if (!e.isPrimary) return;
+  if (!e.isPrimary && e.pointerType !== 'pen' && !state.stroke) return;
   if (pan) { pan = null; svg.classList.remove('panning'); return; }
   if (state.stroke) { extendStroke(toWorld(e.clientX, e.clientY)); finishStroke(true); return; }
   if (state.erase) { finishErase(); return; }
