@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com; frame-src https://yohaku-note-3c146.firebaseapp.com; object-src 'none'">
+<meta name="theme-color" content="#7c3aed">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="マインドマップ">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="manifest" href="manifest.webmanifest">
+<title>マインドマップ</title>
+<style>
+:root{--bg:#f4f5f7;--panel:#fff;--border:#dcdfe4;--text:#1f2328;--muted:#6b7280;--accent:#3b82f6}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI","Yu Gothic UI",sans-serif;color:var(--text);background:var(--bg);font-size:14px}
+#app{display:flex;height:100%}
+#sidebar{width:270px;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;min-width:0}
+#sidebar header{padding:10px 12px;font-weight:600;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+.section{padding:10px 12px 4px;font-size:11px;color:var(--muted);letter-spacing:.05em;display:flex;justify-content:space-between;align-items:center}
+.list{overflow:auto}
+#catList{max-height:40%;flex:none}
+#mapList{flex:1}
+.item{display:flex;align-items:center;gap:6px;padding:6px 12px;cursor:pointer;border-left:3px solid transparent}
+.item:hover{background:#f3f4f6}
+.item.active{background:#eef4ff;border-left-color:var(--accent)}
+.item .name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item .count,.item .date{color:var(--muted);font-size:11px}
+.item .x{opacity:0;border:0;background:none;cursor:pointer;color:var(--muted);padding:0 4px;font-size:14px}
+.item:hover .x{opacity:1}
+.item .x:hover{color:#dc2626}
+.dot{width:10px;height:10px;border-radius:50%;flex:none;background:#9ca3af}
+button.small{border:1px solid var(--border);background:#fff;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:12px;white-space:nowrap}
+button.small:hover{background:#f3f4f6}
+button.small:disabled{opacity:.4;cursor:default}
+#search{margin:4px 12px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px}
+#main{flex:1;display:flex;flex-direction:column;min-width:0}
+#toolbar{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--border);flex-wrap:wrap}
+#title{font-size:16px;font-weight:600;border:1px solid transparent;border-radius:4px;padding:4px 6px;min-width:220px;background:transparent;font-family:inherit}
+#title:hover,#title:focus{border-color:var(--border);background:#fff;outline:none}
+#toolbar select{border:1px solid var(--border);border-radius:4px;padding:4px;font-family:inherit}
+.spacer{flex:1}
+#canvasWrap{flex:1;position:relative;overflow:hidden;background:#f7f7f8;background-image:linear-gradient(#e6e7ea 1px,transparent 1px),linear-gradient(90deg,#e6e7ea 1px,transparent 1px);background-size:24px 24px}
+#canvasWrap.empty::after{content:"左のリストからマップを選ぶか、「＋ マップ」で作成してください";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted)}
+svg{width:100%;height:100%;display:block;cursor:default;touch-action:none}
+svg.panning{cursor:grabbing}
+.node{cursor:default}
+.node rect.hit{fill:transparent;stroke:none}
+.node rect.zone{fill:transparent;stroke:none}
+.node rect.shape{fill:#fff;stroke-width:2}
+.node text{font-size:14px;fill:#374151;dominant-baseline:central;pointer-events:none;user-select:none}
+.node text.ph{fill:#9ca3af}
+.node text.b{font-weight:700}
+.node.selected rect.hit{stroke:#3b82f6;stroke-width:1.5;fill:rgba(59,130,246,.04)}
+.node.root rect.shape{stroke-width:2.5}
+.node.root text{fill:#1f2937;font-weight:500;font-size:16px}
+.node.droptarget rect.hit{stroke:#3b82f6 !important;stroke-width:2;stroke-dasharray:5 3;fill:rgba(59,130,246,.12) !important}
+.plus,.minus,.tog,.cbadge{cursor:pointer}
+.plus,.minus{display:none}
+.node:hover .plus,.node.selected .plus,.node.selected .minus{display:block}
+.plus circle,.minus circle{fill:#d1d5db}
+.plus:hover circle{fill:var(--accent)}
+.minus:hover circle{fill:#ef4444}
+.plus path,.minus path{stroke:#fff;stroke-width:2;stroke-linecap:round}
+.tog{display:none}
+.node:hover .tog,.node.selected .tog{display:block}
+.tog circle{fill:#fff;stroke-width:1.5}
+.tog:hover circle{fill:#eef4ff}
+.tog path{stroke-width:1.5;stroke-linecap:round}
+.cbadge text{font-size:11px;fill:#fff;pointer-events:none;font-weight:600}
+svg.space{cursor:grab}
+#marquee{position:absolute;display:none;border:1px solid var(--accent);background:rgba(59,130,246,.1);pointer-events:none;z-index:4}
+.edge{fill:none;stroke-width:2.5;stroke-linecap:round}
+.badge{font-size:11px;fill:#fff;pointer-events:none}
+.ghost{opacity:.7;pointer-events:none}
+.ghost text{font-size:14px;fill:#1f2937;dominant-baseline:central}
+.ghost rect{fill:#fff;stroke:#3b82f6;stroke-width:1.5}
+.preview{fill:none;stroke:#3b82f6;stroke-width:2;stroke-dasharray:6 4;pointer-events:none}
+#editor{position:absolute;display:none;border:1.5px solid var(--accent);border-radius:4px;padding:0;margin:0;text-align:center;font:14px system-ui;outline:none;background:transparent;z-index:5;color:#374151;box-sizing:border-box}
+#editor::placeholder{color:#9ca3af}
+#help{position:absolute;right:12px;bottom:58px;display:none;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.12);padding:10px 14px;font-size:11px;color:var(--muted);line-height:1.8;z-index:8}
+#help.open{display:block}
+#help kbd{background:#eee;border-radius:3px;padding:0 4px;font-family:inherit}
+#help .head{font-weight:600;color:var(--text);margin-bottom:4px}
+#nodebar{position:absolute;display:flex;gap:2px;align-items:center;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.12);padding:4px;z-index:6}
+#nodebar.hidden{display:none}
+.nb{border:0;background:none;padding:4px 9px;border-radius:6px;cursor:pointer;font-size:13px;font-family:inherit;min-width:30px;line-height:20px;color:var(--text)}
+.nb:hover{background:#f3f4f6}
+.nb.on{background:#e0e7ff}
+.sep{width:1px;height:20px;background:var(--border);margin:0 3px}
+.sw{width:16px;height:16px;border-radius:50%;display:inline-block;vertical-align:middle;box-shadow:0 0 0 1px rgba(0,0,0,.1)}
+#nbpop{position:absolute;display:none;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.12);padding:8px;z-index:7;font-size:12px}
+#nbpop .row{display:flex;gap:4px;align-items:center;margin-bottom:6px}
+#nbpop .row:last-child{margin-bottom:0}
+#nbpop .lbl{color:var(--muted);width:32px}
+#nbpop .opt{border:1px solid var(--border);background:#fff;border-radius:6px;padding:3px 8px;cursor:pointer;font-family:inherit;font-size:12px}
+#nbpop .opt:hover{background:#f3f4f6}
+#nbpop .opt.on{background:#e0e7ff;border-color:#a5b4fc}
+.pal{display:grid;grid-template-columns:repeat(6,22px);gap:6px}
+.pal button{width:22px;height:22px;border-radius:50%;border:2px solid #fff;cursor:pointer;box-shadow:0 0 0 1px #d1d5db;padding:0}
+.pal button.on{box-shadow:0 0 0 2px #1f2937}
+.pal button.auto{background:#fff;font-size:10px;color:var(--muted)}
+#ctx{position:absolute;display:none;background:#fff;border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.12);padding:4px 0;z-index:10;min-width:160px}
+#ctx div{padding:6px 14px;cursor:pointer}
+#ctx div:hover{background:#eef4ff}
+#ctx div.danger:hover{background:#fee2e2;color:#b91c1c}
+#ctx hr{border:0;border-top:1px solid var(--border);margin:4px 0}
+#palette{position:absolute;left:12px;top:12px;display:flex;flex-direction:column;gap:2px;background:#fff;border:1px solid var(--border);border-radius:10px;padding:4px;box-shadow:0 2px 8px rgba(0,0,0,.08);z-index:6}
+#palette hr{border:0;border-top:1px solid var(--border);margin:3px 4px}
+.pb{border:0;background:none;border-radius:8px;width:50px;padding:5px 0 4px;cursor:pointer;font-size:10px;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:1px;font-family:inherit}
+.pb .ic{font-size:18px;line-height:20px;color:var(--text)}
+.pb:hover{background:#f3f4f6}
+.pb.on{background:#e0e7ff;color:#3730a3}
+.pb.on .ic{color:#3730a3}
+.pb:disabled{opacity:.35;cursor:default}
+.pb:disabled:hover{background:none}
+#penbar{position:absolute;left:74px;top:12px;display:flex;gap:6px;align-items:center;background:#fff;border:1px solid var(--border);border-radius:8px;padding:6px 8px;box-shadow:0 2px 8px rgba(0,0,0,.08);z-index:6}
+#penbar.hidden{display:none}
+#penbar .lbl{font-size:11px;color:var(--muted);margin-right:2px}
+.pc{width:20px;height:20px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px #d1d5db;cursor:pointer;padding:0}
+.pc.on{box-shadow:0 0 0 2px #1f2937}
+.pw{width:30px;height:26px;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
+.pw.on{background:#e0e7ff;border-color:#a5b4fc}
+.pw i{display:block;background:#1f2937;border-radius:99px;width:16px}
+svg.pen{cursor:crosshair}
+svg.eraser{cursor:cell}
+.ink{fill:none;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+.ink.halo{stroke:#3b82f6;stroke-opacity:.28}
+.sbox{fill:none;stroke:#3b82f6;stroke-width:1;stroke-dasharray:4 3;vector-effect:non-scaling-stroke;pointer-events:none}
+#strokebar{position:absolute;display:flex;gap:4px;align-items:center;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.12);padding:4px 6px;z-index:6}
+#strokebar.hidden{display:none}
+svg.overstroke{cursor:move}
+.zoom{position:absolute;right:12px;bottom:12px;display:flex;gap:2px;background:#fff;border:1px solid var(--border);border-radius:8px;padding:3px;box-shadow:0 2px 8px rgba(0,0,0,.08);z-index:6}
+.zoom button{border:0;background:none;padding:4px 8px;cursor:pointer;border-radius:6px;font-family:inherit;font-size:13px;color:var(--text);min-width:30px}
+.zoom button:hover{background:#f3f4f6}
+.empty-msg{padding:12px;color:var(--muted);font-size:12px}
+/* cloud sync */
+.sync-tools{margin:4px 8px 8px;border:1px solid transparent;border-radius:8px;padding:0 6px;font-size:12px;flex:none}
+.sync-tools[open]{background:#f9fafb;border-color:var(--border);padding:0 10px 8px}
+.sync-tools summary{display:flex;align-items:center;gap:6px;cursor:pointer;padding:7px 2px;font-weight:600;color:var(--muted);list-style:none;user-select:none}
+.sync-tools summary::-webkit-details-marker{display:none}
+.sync-who{margin-left:auto;font-weight:400;color:#7e8e7d;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sync-badge{margin-left:auto;font-weight:400;font-size:10px;color:#fff;background:#9ca3af;border-radius:10px;padding:2px 8px}
+.sync-who:not(:empty)+.sync-badge{margin-left:4px}
+.sync-badge.on{background:#16a34a}.sync-badge.warn{background:#d97706}.sync-badge.err{background:#dc2626}
+.sync-tools .small{font-size:11px;color:var(--muted);line-height:1.6;margin:4px 0 8px}
+#sync-form input{width:100%;border:1px solid var(--border);border-radius:6px;padding:7px 9px;font-size:13px;margin-bottom:6px;background:#fff;font-family:inherit}
+#sync-form div{display:flex;gap:6px}
+#sync-form button{flex:1;padding:6px 8px}
+button.small.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+button.small.primary:hover{background:#2563eb}
+.link-button{border:0;background:none;color:var(--accent);cursor:pointer;font-size:11px;padding:2px 0;font-family:inherit}
+#sync-logout{width:100%;margin-top:4px}
+.sync-message{color:#725b26;background:#fff0d7;border:1px solid #e8c68f;border-radius:6px;padding:6px 8px}
+.sync-message[hidden]{display:none}
+#sidebar.filemode .sync-tools{display:none}
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <header><span>MindMap</span><span style="display:flex;gap:4px"><button class="small" id="btnExport" title="全データを JSON で保存">保存</button><button class="small" id="btnImport" title="JSON を読み込み">読込</button></span></header>
+    <div class="section"><span>カテゴリ</span><button class="small" id="btnAddCat">＋ カテゴリ</button></div>
+    <div class="list" id="catList"></div>
+    <div class="section"><span>マップ</span><button class="small" id="btnAddMap">＋ マップ</button></div>
+    <input id="search" placeholder="マップを検索">
+    <div class="list" id="mapList"></div>
+    <details id="sync-tools" class="sync-tools">
+      <summary title="押すと開閉します">☁ クラウド同期 <span id="sync-who" class="sync-who"></span><span id="sync-badge" class="sync-badge">オフ</span></summary>
+      <div id="sync-signed-out">
+        <p class="small">余白ノートと同じメールアドレスとパスワードでログインすると、他の端末と自動で同期します。</p>
+        <form id="sync-form">
+          <input type="email" id="sync-email" placeholder="メールアドレス" autocomplete="username" required>
+          <input type="password" id="sync-password" placeholder="パスワード（6文字以上）" autocomplete="current-password" minlength="6" required>
+          <div><button type="submit" class="small primary" id="sync-login">ログイン</button><button type="button" class="small" id="sync-signup">新規登録</button></div>
+        </form>
+        <button type="button" id="sync-reset" class="link-button">パスワードを忘れた</button>
+      </div>
+      <div id="sync-signed-in" hidden>
+        <p class="small" id="sync-account"></p>
+        <p class="small" id="sync-detail"></p>
+        <button type="button" class="small" id="sync-logout">ログアウト（この端末の同期を止める）</button>
+      </div>
+      <p id="sync-message" class="small sync-message" hidden></p>
+    </details>
+  </aside>
+  <div id="main">
+    <div id="toolbar">
+      <input id="title" placeholder="マップのタイトル" disabled>
+      <select id="catSelect" disabled></select>
+      <span class="spacer"></span>
+      <button class="small" id="btnFit">全体表示</button>
+      <button class="small" id="btnAlign" title="手で動かした位置を元に戻す">整列</button>
+      <button class="small" id="btnDup">マップを複製</button>
+      <button class="small" id="btnOutline">アウトライン出力</button>
+      <button class="small" id="btnDelMap">マップを削除</button>
+    </div>
+    <div id="canvasWrap" class="empty">
+      <svg id="svg"></svg>
+      <input id="editor">
+      <div id="marquee"></div>
+      <div id="ctx"></div>
+      <div id="palette">
+        <button class="pb on" data-tool="select" title="選択 (Esc)"><span class="ic">↖</span>選択</button>
+        <button class="pb" data-tool="pen" title="ペン: ドラッグで手書き"><span class="ic">✎</span>ペン</button>
+        <button class="pb" data-tool="eraser" title="消しゴム: 線をなぞって消す"><span class="ic">⌫</span>消しゴム</button>
+        <hr>
+        <button class="pb" id="btnUndo" title="元に戻す (Ctrl+Z)"><span class="ic">↶</span>戻す</button>
+        <button class="pb" id="btnRedo" title="やり直す (Ctrl+Y)"><span class="ic">↷</span>やり直し</button>
+      </div>
+      <div id="penbar" class="hidden"></div>
+      <div id="strokebar" class="hidden"></div>
+      <div id="nodebar" class="hidden">
+        <button class="nb" id="nbShape" title="ノードの形">なし</button>
+        <button class="nb" id="nbColor" title="色と線"><span class="sw" id="nbSw"></span></button>
+        <span class="sep"></span>
+        <button class="nb" id="nbBold" title="太字 (Ctrl+B)"><b>B</b></button>
+        <span class="sep"></span>
+        <button class="nb" id="nbDup" title="複製 (Ctrl+D)">⧉</button>
+        <button class="nb" id="nbDel" title="削除 (Delete)">🗑</button>
+        <span class="sep"></span>
+        <button class="nb" id="nbMore" title="その他">⋯</button>
+      </div>
+      <div id="nbpop"></div>
+      <div class="zoom">
+        <button id="btnFitIcon" title="全体表示 (Ctrl+0)">⊡</button>
+        <button id="zoomOut" title="縮小">−</button>
+        <button id="zoomReset" title="100% に戻す">100%</button>
+        <button id="zoomIn" title="拡大">＋</button>
+        <button id="btnHelp" title="操作ヘルプ">?</button>
+      </div>
+      <div id="help">
+        <div class="head">操作ヘルプ</div>
+        <kbd>Tab</kbd> 子を追加　<kbd>Enter</kbd> 兄弟を追加　<kbd>Delete</kbd> 削除　<kbd>Ctrl+D</kbd> 複製　<kbd>Ctrl+B</kbd> 太字<br>
+        <kbd>F2</kbd> / ダブルクリック 編集　<kbd>Space</kbd> 折りたたみ　枝の付け根の○でも開閉<br>
+        <kbd>↑↓←→</kbd> 移動　<kbd>Alt+↑↓</kbd> 並べ替え　右クリック メニュー<br>
+        ノードをドラッグ 移動 (他のノードに重ねると親の変更 / 並べ替え)<br>
+        背景ドラッグ 範囲選択　<kbd>Ctrl</kbd>+クリック 追加選択　<kbd>Ctrl+A</kbd> 全選択<br>
+        ホイール 拡大縮小　<kbd>Shift</kbd>+ホイール 横移動　<kbd>Space</kbd>+ドラッグ / 中ボタン 画面移動<br>
+        左のパレット: ペンで手書き、消しゴムでなぞって消す、<kbd>Esc</kbd> で選択に戻る
+      </div>
+    </div>
+  </div>
+</div>
+<input type="file" id="fileInput" accept=".json,application/json" style="display:none">
+<script src="app.js"></script>
+<script type="module" src="cloud.mjs"></script>
+
+</body>
+</html>
